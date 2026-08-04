@@ -6,6 +6,7 @@
 <title>Kilo Taxi — ခရီးသည်</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&family=Padauk:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
 <style>
 /* ============================================================
    KILO TAXI — DESIGN SYSTEM
@@ -564,6 +565,31 @@ input, select, textarea { font-family: inherit; }
 /* ---------------- Map box ---------------- */
 
 #map { width: 100%; height: 340px; border-radius: var(--r-md); border: 1px solid var(--line); }
+#userLiveMap { width: 100%; height: 340px; border-radius: var(--r-md); border: 1px solid var(--line); }
+
+.kt-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--fare-green);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kt-live-badge::before {
+  content: "";
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--fare-green);
+  animation: kt-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes kt-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.3); }
+}
 
 /* ---------------- Map pin-select mode ---------------- */
 .kt-map-mode-bar {
@@ -800,6 +826,13 @@ body, .kt-input, .kt-select, .kt-btn, .kt-label, .kt-card-title { font-family: "
 
       <div class="kt-map-hint" id="mapHint">မြေပုံပေါ်ကို နှိပ်ပြီး 📍 Pickup နေရာကို ရွေးပါ</div>
 
+      <div class="kt-layer-switch">
+        <div class="kt-layer-btn active" data-layer="dark">🌙 Dark</div>
+        <div class="kt-layer-btn" data-layer="standard">🗺️ Standard</div>
+        <div class="kt-layer-btn" data-layer="satellite">🛰️ Satellite</div>
+        <div class="kt-layer-btn" data-layer="terrain">⛰️ Terrain</div>
+      </div>
+
       <div id="map"></div>
 
       <div class="kt-selected-points">
@@ -845,6 +878,28 @@ body, .kt-input, .kt-select, .kt-btn, .kt-label, .kt-card-title { font-family: "
       <button class="kt-btn kt-btn-ghost kt-mt-16" onclick="location.reload()">↺ နောက်ထပ်ခေါ်မည်</button>
     </div>
 
+    <!-- Live tracking (Driver "ခရီးစဉ်စမည်" နှိပ်ပြီးနောက် ပေါ်လာသည်) -->
+    <div class="kt-card kt-hidden" id="liveTrackingCard">
+      <div class="kt-card-title kt-flex-between">
+        <span>🧭 Driver လာနေပါပြီ</span>
+        <span class="kt-live-badge">GPS Live</span>
+      </div>
+      <div id="userLiveMap"></div>
+      <div class="kt-mt-16" style="font-size:13px; color: var(--text-mid); text-align:center;">
+        Driver ရဲ့ လက်ရှိတည်နေရာကို Live ကြည့်နေပါသည်
+      </div>
+    </div>
+
+    <!-- Trip completed -->
+    <div class="kt-card kt-hidden" id="tripCompletedCard">
+      <div class="kt-empty">
+        <div class="icon">🏁</div>
+        <div style="color: var(--text-hi); font-weight:600; font-size:15px; margin-bottom:6px;">ခရီးစဉ်ပြီးဆုံးပါပြီ</div>
+        <div>ခရီးသွားလာမှု ပြီးဆုံးသွားပါပြီ။ Kilo Taxi ကိုသုံးပေးတဲ့အတွက် ကျေးဇူးတင်ပါသည်</div>
+      </div>
+      <button class="kt-btn kt-btn-primary kt-mt-16" onclick="location.reload()">🚕 နောက်ထပ်ခေါ်မည်</button>
+    </div>
+
   </div>
 </div>
 
@@ -856,7 +911,8 @@ body, .kt-input, .kt-select, .kt-btn, .kt-label, .kt-card-title { font-family: "
   // ============================================================
   const SUPABASE_URL = "https://wnceuosxvcbuijgazfjg.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_qgef5kcWKT5aghNNhRd6xg_e0WEXUx9";
-  const GOOGLE_MAPS_API_KEY = "AIzaSyAXt4di-0rduwqibmSuk3w_W99QpONmGUE";
+  // Map အတွက် MapLibre GL JS + OpenStreetMap (Nominatim/OSRM) ကို သုံးထားလို့
+  // API Key လုံးဝမလိုအပ်ပါ
 
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -882,30 +938,25 @@ body, .kt-input, .kt-select, .kt-btn, .kt-label, .kt-card-title { font-family: "
     }, 3200);
   }
 </script>
-<!-- Google Maps JS (loaded dynamically below) -->
-<script>
-  function loadGoogleMaps() {
-    const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places&callback=initMap`;
-    s.async = true;
-    document.head.appendChild(s);
-  }
-</script>
+<!-- MapLibre GL JS -->
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 // ============================================================
-// GOOGLE MAPS STACK:
-//  - Maps JavaScript API → Map ပြသရန်
-//  - Places API (Autocomplete) → တည်နေရာ ရှာဖွေရန်
-//  - Directions API → လမ်းကြောင်း + အကွာအဝေး (km) တွက်ချက်ရန်
+// FREE MAP STACK — API Key လုံးဝမလို:
+//  - MapLibre GL JS  → Map ပြသရန် + Tap-to-select pin
+//  - Geolocation API → လက်ရှိတည်နေရာ ရှာဖွေရန် (browser built-in)
+//  - Nominatim (OSM) → တည်နေရာစာသား ရှာဖွေခြင်း + Reverse geocode
+//  - OSRM            → လမ်းကြောင်း + အကွာအဝေး (km) တွက်ချက်ခြင်း
 // ============================================================
 
-let map, directionsService, directionsRenderer, geocoder;
+let map, routeLayer, pickupMarker, dropoffMarker;
 let pickupPlace = null, dropoffPlace = null; // { lat, lng, label }
 let currentZone = "inner";
 let pricing = { start_fare_inner: 1000, start_fare_outer: 2000, per_km_rate: 500 };
 let calculatedDistanceKm = null;
 let calculatedFare = null;
-let selectMode = "pickup"; // "pickup" | "dropoff" — မြေပုံနှိပ်ရင် ဘယ်ပင်ကို ချမလဲ
+let calculatedRouteGeometry = null;
+let selectMode = "pickup"; // "pickup" | "dropoff"
 
 // ---- Load pricing from Supabase on page load ----
 async function loadPricing() {
@@ -929,9 +980,144 @@ function resetFare() {
   document.getElementById("fareCard").classList.add("kt-hidden");
   calculatedDistanceKm = null;
   calculatedFare = null;
+  calculatedRouteGeometry = null;
 }
 
-// ---- Mode switch (Pickup / Dropoff ရွေးရန်) ----
+// ---- Map tile layers (all free, no API key) ----
+// MapLibre raster sources need explicit subdomain URLs instead of Leaflet's {s} placeholder
+const tileLayers = {
+  dark: {
+    tiles: ["a", "b", "c", "d"].map(s => `https://${s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png`),
+    maxZoom: 19,
+    attribution: "&copy; CARTO &copy; OpenStreetMap",
+  },
+  standard: {
+    tiles: ["a", "b", "c"].map(s => `https://${s}.tile.openstreetmap.org/{z}/{x}/{y}.png`),
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors",
+  },
+  satellite: {
+    tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+    maxZoom: 19,
+    attribution: "&copy; Esri, Maxar, Earthstar Geographics",
+  },
+  terrain: {
+    tiles: ["a", "b", "c"].map(s => `https://${s}.tile.opentopomap.org/{z}/{x}/{y}.png`),
+    maxZoom: 17,
+    attribution: "&copy; OpenTopoMap (CC-BY-SA)",
+  },
+};
+
+const BASEMAP_SOURCE_ID = "kt-basemap-src";
+const BASEMAP_LAYER_ID = "kt-basemap-layer";
+const ROUTE_SOURCE_ID = "kt-route-src";
+const ROUTE_LAYER_ID = "kt-route-layer";
+
+// ---- Route line (GeoJSON) source + layer, created once after map load ----
+function initRouteLayer() {
+  if (map.getSource(ROUTE_SOURCE_ID)) return;
+  map.addSource(ROUTE_SOURCE_ID, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+  map.addLayer({
+    id: ROUTE_LAYER_ID,
+    type: "line",
+    source: ROUTE_SOURCE_ID,
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#F5A623", "line-width": 4 },
+  });
+}
+
+function setRouteLine(lngLatCoords) {
+  if (!map.getSource(ROUTE_SOURCE_ID)) initRouteLayer();
+  map.getSource(ROUTE_SOURCE_ID).setData({
+    type: "Feature",
+    geometry: { type: "LineString", coordinates: lngLatCoords },
+  });
+  routeLayer = true; // flag: a route is currently drawn
+}
+
+function clearRouteLayer() {
+  if (routeLayer && map.getSource(ROUTE_SOURCE_ID)) {
+    map.getSource(ROUTE_SOURCE_ID).setData({ type: "FeatureCollection", features: [] });
+  }
+  routeLayer = null;
+}
+
+function switchMapLayer(layerKey) {
+  const layerDef = tileLayers[layerKey];
+
+  if (map.getLayer(BASEMAP_LAYER_ID)) map.removeLayer(BASEMAP_LAYER_ID);
+  if (map.getSource(BASEMAP_SOURCE_ID)) map.removeSource(BASEMAP_SOURCE_ID);
+
+  map.addSource(BASEMAP_SOURCE_ID, {
+    type: "raster",
+    tiles: layerDef.tiles,
+    tileSize: 256,
+    maxzoom: layerDef.maxZoom,
+    attribution: layerDef.attribution,
+  });
+
+  // Basemap layer always goes at the very bottom, below markers/route
+  map.addLayer({
+    id: BASEMAP_LAYER_ID,
+    type: "raster",
+    source: BASEMAP_SOURCE_ID,
+  }, map.getStyle().layers[0]?.id);
+
+  document.querySelectorAll(".kt-layer-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.layer === layerKey);
+  });
+}
+
+document.querySelectorAll(".kt-layer-btn").forEach(btn => {
+  btn.addEventListener("click", () => switchMapLayer(btn.dataset.layer));
+});
+
+// ---- Init MapLibre map (Yangon default center) ----
+function initMap() {
+  map = new maplibregl.Map({
+    container: "map",
+    style: { version: 8, sources: {}, layers: [] },
+    center: [96.1735, 16.8409], // MapLibre uses [lng, lat]
+    zoom: 13,
+  });
+  map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+  map.on("load", () => {
+    switchMapLayer("dark");
+    initRouteLayer();
+  });
+
+  // Map ပေါ်နှိပ်ရင် pin ချမည် (Pickup/Dropoff mode အလိုက်)
+  map.on("click", (e) => {
+    setPoint(selectMode, e.lngLat.lat, e.lngLat.lng);
+  });
+
+  // Page ဖွင့်တာနဲ့ GPS ကနေ လက်ရှိတည်နေရာကို auto ရှာပြီး Pickup အဖြစ် ပြသ
+  autoLocatePickup();
+}
+initMap();
+
+function autoLocatePickup() {
+  if (!navigator.geolocation) return;
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { latitude, longitude } = pos.coords;
+      map.setCenter([longitude, latitude]);
+      map.setZoom(16);
+      setPoint("pickup", latitude, longitude);
+    },
+    () => {
+      // GPS ခွင့်ပြုချက်မရရင် Yangon default view ကိုပဲ ဆက်ပြထား၊ error မပြ
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// ---- Mode switch buttons (pickup / dropoff ရွေးရန်) ----
 document.getElementById("modePickupBtn").addEventListener("click", () => setSelectMode("pickup"));
 document.getElementById("modeDropoffBtn").addEventListener("click", () => setSelectMode("dropoff"));
 
@@ -945,177 +1131,166 @@ function setSelectMode(mode) {
       : "မြေပုံပေါ်ကို နှိပ်ပြီး 🏁 Dropoff နေရာကို ရွေးပါ";
 }
 
-// ---- Reverse geocode (coordinate -> address text) via Google Geocoder ----
-function reverseGeocode(lat, lng, callback) {
-  geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-    const label = (status === "OK" && results[0])
-      ? results[0].formatted_address
-      : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    callback(label);
+// ---- Simple debounce helper ----
+function debounce(fn, delay) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), delay);
+  };
+}
+
+// ---- Nominatim place search (free, no key) ----
+async function searchPlace(query) {
+  if (!query || query.trim().length < 3) return [];
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=mm&limit=6&addressdetails=1`;
+  try {
+    const res = await fetch(url, { headers: { "Accept-Language": "my,en" } });
+    const data = await res.json();
+    return data.map(d => ({ label: d.display_name, lat: parseFloat(d.lat), lng: parseFloat(d.lon) }));
+  } catch (e) {
+    return [];
+  }
+}
+
+// ---- Reverse geocode (coordinate -> address text) via Nominatim ----
+async function reverseGeocode(lat, lng) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
+    const res = await fetch(url, { headers: { "Accept-Language": "my,en" } });
+    const data = await res.json();
+    return data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  } catch (e) {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+}
+
+// ---- Text-search autocomplete on inputs (simple dropdown list) ----
+function wireTextSearch(inputId, type) {
+  const input = document.getElementById(inputId);
+  let listEl = null;
+
+  const closeList = () => { if (listEl) { listEl.remove(); listEl = null; } };
+
+  const doSearch = debounce(async () => {
+    const q = input.value.trim();
+    if (q.length < 3) { closeList(); return; }
+
+    const results = await searchPlace(q);
+    closeList();
+    if (results.length === 0) return;
+
+    listEl = document.createElement("div");
+    listEl.className = "kt-suggest-list";
+    listEl.style.position = "absolute";
+    listEl.style.zIndex = "50";
+    listEl.style.background = "var(--ink-3)";
+    listEl.style.border = "1px solid var(--line)";
+    listEl.style.borderRadius = "var(--r-sm)";
+    listEl.style.maxHeight = "200px";
+    listEl.style.overflowY = "auto";
+    listEl.style.width = input.offsetWidth + "px";
+
+    results.forEach(r => {
+      const item = document.createElement("div");
+      item.textContent = r.label;
+      item.style.padding = "10px 12px";
+      item.style.fontSize = "13px";
+      item.style.color = "var(--text-hi)";
+      item.style.cursor = "pointer";
+      item.style.borderBottom = "1px solid var(--line)";
+      item.addEventListener("click", () => {
+        input.value = r.label;
+        closeList();
+        setPoint(type, r.lat, r.lng, r.label);
+        map.setCenter([r.lng, r.lat]);
+        map.setZoom(15);
+      });
+      listEl.appendChild(item);
+    });
+
+    input.parentElement.style.position = "relative";
+    input.parentElement.appendChild(listEl);
+    listEl.style.top = (input.offsetTop + input.offsetHeight + 2) + "px";
+    listEl.style.left = "0px";
+  }, 450);
+
+  input.addEventListener("input", doSearch);
+  document.addEventListener("click", (e) => {
+    if (e.target !== input) closeList();
   });
 }
 
-// ---- Set pickup or dropoff point (used by map click, GPS locate, and autocomplete) ----
-function setPoint(type, lat, lng, knownLabel) {
+wireTextSearch("pickupInput", "pickup");
+wireTextSearch("dropoffInput", "dropoff");
+
+// ---- Set pickup or dropoff point (from map click, search, or GPS) ----
+async function setPoint(type, lat, lng, knownLabel) {
   const textEl = document.getElementById(type === "pickup" ? "pickupText" : "dropoffText");
   const inputEl = document.getElementById(type === "pickup" ? "pickupInput" : "dropoffInput");
 
-  function apply(label) {
-    const place = { lat, lng, label };
-    if (type === "pickup") pickupPlace = place; else dropoffPlace = place;
-
-    textEl.textContent = label;
-    textEl.classList.remove("empty");
-    inputEl.value = label;
-
-    resetFare();
-    updateMapMarkers();
-
-    // Pickup ချပြီးရင် Dropoff mode ကို auto ပြောင်းပေး
-    if (type === "pickup" && !dropoffPlace) setSelectMode("dropoff");
-  }
-
-  if (knownLabel) {
-    apply(knownLabel);
-  } else {
+  let label = knownLabel;
+  if (!label) {
     textEl.textContent = "လိပ်စာရှာနေသည်...";
     textEl.classList.add("empty");
-    reverseGeocode(lat, lng, apply);
+    label = await reverseGeocode(lat, lng);
+  }
+
+  const place = { lat, lng, label };
+  if (type === "pickup") { pickupPlace = place; } else { dropoffPlace = place; }
+
+  textEl.textContent = label;
+  textEl.classList.remove("empty");
+  inputEl.value = label;
+
+  resetFare();
+  updateMapMarkers();
+
+  if (type === "pickup" && !dropoffPlace) {
+    setSelectMode("dropoff");
   }
 }
 
-// ---- Google Maps init (called via callback) ----
-function initMap() {
-  map = new google.maps.Map(document.getElementById("map"), {
-    center: { lat: 16.8409, lng: 96.1735 }, // Yangon default
-    zoom: 13,
-    mapTypeControl: true,       // Satellite / Terrain / Map ခလုတ်ကို Google ကနေ built-in ပေးမယ်
-    mapTypeControlOptions: {
-      style: google.maps.MapTypeControlStyle.DROPDOWN_MENU,
-      position: google.maps.ControlPosition.TOP_RIGHT,
-      mapTypeIds: ["roadmap", "satellite", "terrain", "hybrid"],
-    },
-    streetViewControl: false,
-    fullscreenControl: false,
-    styles: [
-      { elementType: "geometry", stylers: [{ color: "#1E2A40" }] },
-      { elementType: "labels.text.stroke", stylers: [{ color: "#0E1420" }] },
-      { elementType: "labels.text.fill", stylers: [{ color: "#A7B0C2" }] },
-      { featureType: "road", elementType: "geometry", stylers: [{ color: "#2A3650" }] },
-      { featureType: "water", elementType: "geometry", stylers: [{ color: "#0E1420" }] },
-      { featureType: "poi", stylers: [{ visibility: "off" }] },
-    ],
-  });
-
-  directionsService = new google.maps.DirectionsService();
-  directionsRenderer = new google.maps.DirectionsRenderer({
-    map,
-    suppressMarkers: false,
-    polylineOptions: { strokeColor: "#F5A623", strokeWeight: 4 },
-  });
-  geocoder = new google.maps.Geocoder();
-
-  // Map ပေါ်နှိပ်ရင် pin ချမည် (Pickup/Dropoff mode အလိုက်)
-  map.addListener("click", (e) => {
-    setPoint(selectMode, e.latLng.lat(), e.latLng.lng());
-  });
-
-  const pickupAutocomplete = new google.maps.places.Autocomplete(document.getElementById("pickupInput"), {
-    fields: ["geometry", "formatted_address", "name"],
-    componentRestrictions: { country: "mm" },
-  });
-  const dropoffAutocomplete = new google.maps.places.Autocomplete(document.getElementById("dropoffInput"), {
-    fields: ["geometry", "formatted_address", "name"],
-    componentRestrictions: { country: "mm" },
-  });
-
-  pickupAutocomplete.addListener("place_changed", () => {
-    const p = pickupAutocomplete.getPlace();
-    if (!p.geometry) return;
-    setPoint("pickup", p.geometry.location.lat(), p.geometry.location.lng(), p.formatted_address || p.name);
-    map.setCenter(p.geometry.location);
-    map.setZoom(15);
-  });
-
-  dropoffAutocomplete.addListener("place_changed", () => {
-    const p = dropoffAutocomplete.getPlace();
-    if (!p.geometry) return;
-    setPoint("dropoff", p.geometry.location.lat(), p.geometry.location.lng(), p.formatted_address || p.name);
-    map.setCenter(p.geometry.location);
-    map.setZoom(15);
-  });
-
-  // ---- Page ဖွင့်တာနဲ့ GPS ကနေ လက်ရှိတည်နေရာကို auto ရှာပြီး Pickup အဖြစ် ပြသ ----
-  autoLocatePickup();
+// ---- Small colored dot element used for pickup/dropoff MapLibre markers ----
+function createDotElement(color) {
+  const el = document.createElement("div");
+  el.style.width = "16px";
+  el.style.height = "16px";
+  el.style.borderRadius = "50%";
+  el.style.background = color;
+  el.style.border = "2px solid #fff";
+  el.style.boxShadow = "0 1px 4px rgba(0,0,0,0.4)";
+  return el;
 }
-loadGoogleMaps();
-
-function autoLocatePickup() {
-  if (!navigator.geolocation) return;
-
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const { latitude, longitude } = pos.coords;
-      map.setCenter({ lat: latitude, lng: longitude });
-      map.setZoom(16);
-      setPoint("pickup", latitude, longitude);
-    },
-    () => {
-      // GPS ခွင့်ပြုချက်မရရင် Yangon default view ကိုပဲ ဆက်ပြထား၊ error မပြ
-    },
-    { enableHighAccuracy: true, timeout: 10000 }
-  );
-}
-
-let pickupMarker = null, dropoffMarker = null;
 
 function updateMapMarkers() {
-  if (pickupMarker) { pickupMarker.setMap(null); pickupMarker = null; }
-  if (dropoffMarker) { dropoffMarker.setMap(null); dropoffMarker = null; }
+  if (pickupMarker) { pickupMarker.remove(); pickupMarker = null; }
+  if (dropoffMarker) { dropoffMarker.remove(); dropoffMarker = null; }
+  clearRouteLayer();
 
-  const bounds = new google.maps.LatLngBounds();
-  let hasPoint = false;
+  const bounds = [];
 
   if (pickupPlace) {
-    pickupMarker = new google.maps.Marker({
-      position: { lat: pickupPlace.lat, lng: pickupPlace.lng },
-      map,
-      label: { text: "A", color: "#0E1420", fontWeight: "700" },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 9,
-        fillColor: "#F5A623",
-        fillOpacity: 1,
-        strokeColor: "#fff",
-        strokeWeight: 2,
-      },
-    });
-    bounds.extend(pickupMarker.getPosition());
-    hasPoint = true;
+    pickupMarker = new maplibregl.Marker({ element: createDotElement("#F5A623") })
+      .setLngLat([pickupPlace.lng, pickupPlace.lat])
+      .setPopup(new maplibregl.Popup({ closeButton: false, offset: 12 }).setText("Pickup"))
+      .addTo(map);
+    bounds.push([pickupPlace.lng, pickupPlace.lat]);
   }
-
   if (dropoffPlace) {
-    dropoffMarker = new google.maps.Marker({
-      position: { lat: dropoffPlace.lat, lng: dropoffPlace.lng },
-      map,
-      label: { text: "B", color: "#06251A", fontWeight: "700" },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 9,
-        fillColor: "#3FBF7F",
-        fillOpacity: 1,
-        strokeColor: "#fff",
-        strokeWeight: 2,
-      },
-    });
-    bounds.extend(dropoffMarker.getPosition());
-    hasPoint = true;
+    dropoffMarker = new maplibregl.Marker({ element: createDotElement("#3FBF7F") })
+      .setLngLat([dropoffPlace.lng, dropoffPlace.lat])
+      .setPopup(new maplibregl.Popup({ closeButton: false, offset: 12 }).setText("Dropoff"))
+      .addTo(map);
+    bounds.push([dropoffPlace.lng, dropoffPlace.lat]);
   }
 
-  if (pickupPlace && dropoffPlace) {
-    map.fitBounds(bounds, 40);
-  } else if (hasPoint) {
-    map.setCenter(bounds.getCenter());
+  if (bounds.length === 2) {
+    const b = new maplibregl.LngLatBounds(bounds[0], bounds[0]);
+    b.extend(bounds[1]);
+    map.fitBounds(b, { padding: 40 });
+  } else if (bounds.length === 1) {
+    map.setCenter(bounds[0]);
     map.setZoom(15);
   }
 }
@@ -1132,13 +1307,13 @@ document.getElementById("locateBtn").addEventListener("click", () => {
   btn.textContent = "⏳";
 
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
+    async (pos) => {
       btn.disabled = false;
       btn.textContent = "🎯";
       const { latitude, longitude } = pos.coords;
-      map.setCenter({ lat: latitude, lng: longitude });
+      map.setCenter([longitude, latitude]);
       map.setZoom(16);
-      setPoint(selectMode, latitude, longitude);
+      await setPoint(selectMode, latitude, longitude);
       showToast("လက်ရှိတည်နေရာကို ရရှိပါပြီ", "success");
     },
     (err) => {
@@ -1150,8 +1325,8 @@ document.getElementById("locateBtn").addEventListener("click", () => {
   );
 });
 
-// ---- Calculate distance via Google Directions API ----
-document.getElementById("calcBtn").addEventListener("click", () => {
+// ---- Calculate distance via OSRM (free routing, no key) ----
+document.getElementById("calcBtn").addEventListener("click", async () => {
   if (!pickupPlace || !dropoffPlace) {
     showToast("Pickup နှင့် Dropoff တည်နေရာနှစ်ခုလုံး ရွေးပေးပါ", "error");
     return;
@@ -1160,26 +1335,32 @@ document.getElementById("calcBtn").addEventListener("click", () => {
   const btnText = document.getElementById("calcBtnText");
   btnText.innerHTML = '<span class="kt-spinner"></span> တွက်ချက်နေသည်...';
 
-  const request = {
-    origin: { lat: pickupPlace.lat, lng: pickupPlace.lng },
-    destination: { lat: dropoffPlace.lat, lng: dropoffPlace.lng },
-    travelMode: google.maps.TravelMode.DRIVING,
-  };
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${pickupPlace.lng},${pickupPlace.lat};${dropoffPlace.lng},${dropoffPlace.lat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const data = await res.json();
 
-  directionsService.route(request, (result, status) => {
     btnText.textContent = "📏 အကွာအဝေး + စျေးနှုန်း တွက်မည်";
 
-    if (status !== "OK") {
+    if (data.code !== "Ok" || !data.routes || data.routes.length === 0) {
       showToast("လမ်းကြောင်းရှာမတွေ့ပါ။ ထပ်ကြိုးစားပါ", "error");
       return;
     }
 
-    directionsRenderer.setDirections(result);
-
-    const leg = result.routes[0].legs[0];
-    const meters = leg.distance.value;
-    const km = meters / 1000;
+    const route = data.routes[0];
+    const km = route.distance / 1000;
     calculatedDistanceKm = Math.round(km * 100) / 100;
+    calculatedRouteGeometry = route.geometry; // Booking တင်ချိန်တွင် Driver/Live Map ပေါ် ပြသရန် သိမ်းထား
+
+    // OSRM returns [lng, lat] pairs already, which is what MapLibre expects
+    const lngLatCoords = route.geometry.coordinates;
+    setRouteLine(lngLatCoords);
+
+    const routeBounds = lngLatCoords.reduce(
+      (b, c) => b.extend(c),
+      new maplibregl.LngLatBounds(lngLatCoords[0], lngLatCoords[0])
+    );
+    map.fitBounds(routeBounds, { padding: 30 });
 
     const startFare = currentZone === "inner" ? pricing.start_fare_inner : pricing.start_fare_outer;
     calculatedFare = calculateFare(startFare, pricing.per_km_rate, calculatedDistanceKm);
@@ -1190,7 +1371,10 @@ document.getElementById("calcBtn").addEventListener("click", () => {
     document.getElementById("totalFareText").textContent = formatMMK(calculatedFare);
     document.getElementById("fareCard").classList.remove("kt-hidden");
     document.getElementById("fareCard").scrollIntoView({ behavior: "smooth", block: "center" });
-  });
+  } catch (e) {
+    btnText.textContent = "📏 အကွာအဝေး + စျေးနှုန်း တွက်မည်";
+    showToast("Network error — ထပ်ကြိုးစားပါ", "error");
+  }
 });
 
 // ---- Submit booking ----
@@ -1227,6 +1411,7 @@ document.getElementById("bookBtn").addEventListener("click", async () => {
     start_fare: startFare,
     per_km_rate: pricing.per_km_rate,
     total_fare: calculatedFare,
+    route_geometry: calculatedRouteGeometry,
     status: "pending",
   }).select().single();
 
@@ -1242,7 +1427,128 @@ document.getElementById("bookBtn").addEventListener("click", async () => {
   document.getElementById("fareCard").classList.add("kt-hidden");
   document.getElementById("successCard").classList.remove("kt-hidden");
   document.getElementById("bookingRef").textContent = "Booking ID: " + data.id.slice(0, 8).toUpperCase();
+
+  watchBookingStatus(data.id);
 });
+
+// ============================================================
+// BOOKING STATUS WATCH — Driver assign/start/complete ဖြစ်လာချိန်
+// status ပြောင်းသွားတာကို Realtime subscribe လုပ်ပြီး Live tracking
+// view ကို auto ပြောင်းပြသရန်
+// ============================================================
+let liveMap = null;
+let liveDriverMarker = null;
+let liveTripChannel = null;
+
+const LIVE_ROUTE_SOURCE_ID = "kt-user-live-route-source";
+const LIVE_ROUTE_LAYER_ID = "kt-user-live-route-layer";
+
+function watchBookingStatus(tripId) {
+  if (liveTripChannel) supabaseClient.removeChannel(liveTripChannel);
+
+  liveTripChannel = supabaseClient
+    .channel("user-trip-" + tripId)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "trips", filter: `id=eq.${tripId}` }, (payload) => {
+      handleTripUpdate(payload.new);
+    })
+    .subscribe();
+
+  // Realtime subscribe မလုပ်ခင် status ပြောင်းသွားနိုင်လို့ တစ်ခါ initial fetch ပါ လုပ်ထား
+  supabaseClient.from("trips").select("*").eq("id", tripId).single().then(({ data }) => {
+    if (data) handleTripUpdate(data);
+  });
+}
+
+function handleTripUpdate(trip) {
+  if (trip.status === "ongoing") {
+    showLiveTrackingView(trip);
+  } else if (trip.status === "completed") {
+    showTripCompletedView();
+  }
+  // "pending"/"assigned" အခြေအနေတွေမှာတော့ Booking confirmation screen ကိုပဲ ဆက်ပြထား
+}
+
+function makeDriverMarkerEl() {
+  const el = document.createElement("div");
+  el.style.width = "24px";
+  el.style.height = "24px";
+  el.style.borderRadius = "50%";
+  el.style.background = "#F5A623";
+  el.style.border = "3px solid #fff";
+  el.style.boxShadow = "0 2px 8px rgba(0,0,0,0.5)";
+  el.style.display = "flex";
+  el.style.alignItems = "center";
+  el.style.justifyContent = "center";
+  el.style.fontSize = "12px";
+  el.textContent = "🚕";
+  return el;
+}
+
+function showLiveTrackingView(trip) {
+  document.getElementById("successCard").classList.add("kt-hidden");
+  document.getElementById("liveTrackingCard").classList.remove("kt-hidden");
+
+  if (!liveMap) {
+    const initLat = trip.current_lat || trip.pickup_lat;
+    const initLng = trip.current_lng || trip.pickup_lng;
+
+    liveMap = new maplibregl.Map({
+      container: "userLiveMap",
+      style: "https://tiles.openfreemap.org/styles/dark",
+      center: [initLng, initLat],
+      zoom: 14,
+    });
+
+    liveMap.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+    liveMap.on("load", () => {
+      // User Booking တင်ချိန်က route (route_geometry) ကို Live Map ပေါ်တွင် ပြသ —
+      // km/fare ကို ဒီနေရာမှာ ပြန်မတွက်ပါ
+      if (trip.route_geometry) {
+        const geojson = { type: "Feature", properties: {}, geometry: trip.route_geometry };
+        liveMap.addSource(LIVE_ROUTE_SOURCE_ID, { type: "geojson", data: geojson });
+        liveMap.addLayer({
+          id: LIVE_ROUTE_LAYER_ID,
+          type: "line",
+          source: LIVE_ROUTE_SOURCE_ID,
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-color": "#F5A623", "line-width": 4, "line-opacity": 0.85 },
+        });
+
+        const coords = trip.route_geometry.coordinates;
+        if (coords && coords.length > 0) {
+          const bounds = coords.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(coords[0], coords[0]));
+          liveMap.fitBounds(bounds, { padding: 50, duration: 0 });
+        }
+      }
+
+      // Pickup/Dropoff markers
+      new maplibregl.Marker({ color: "#F5A623" }).setLngLat([trip.pickup_lng, trip.pickup_lat]).addTo(liveMap);
+      new maplibregl.Marker({ color: "#3FBF7F" }).setLngLat([trip.dropoff_lng, trip.dropoff_lat]).addTo(liveMap);
+
+      if (trip.current_lat && trip.current_lng) {
+        liveDriverMarker = new maplibregl.Marker({ element: makeDriverMarkerEl() })
+          .setLngLat([trip.current_lng, trip.current_lat])
+          .addTo(liveMap);
+      }
+    });
+  } else if (trip.current_lat && trip.current_lng) {
+    if (!liveDriverMarker) {
+      liveDriverMarker = new maplibregl.Marker({ element: makeDriverMarkerEl() })
+        .setLngLat([trip.current_lng, trip.current_lat])
+        .addTo(liveMap);
+    } else {
+      liveDriverMarker.setLngLat([trip.current_lng, trip.current_lat]);
+    }
+    liveMap.panTo([trip.current_lng, trip.current_lat]);
+  }
+}
+
+function showTripCompletedView() {
+  if (liveTripChannel) { supabaseClient.removeChannel(liveTripChannel); liveTripChannel = null; }
+  document.getElementById("liveTrackingCard").classList.add("kt-hidden");
+  document.getElementById("tripCompletedCard").classList.remove("kt-hidden");
+}
 </script>
 
 </body>
